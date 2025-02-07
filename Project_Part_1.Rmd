@@ -1,0 +1,386 @@
+---
+title: "Project Part 1"
+author: "Evrim & Antonia"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(MASS)
+library(Sleuth3)
+library(leaps)
+library(stats)
+library(car)
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(gridExtra)
+library(psych)
+library(naniar)
+library(VIM)
+library(mice)
+library(DMwR2)
+library(knitr)
+
+
+```
+
+
+
+## Data Set
+```{r water potability}
+#attach(water_potability)
+
+water_potability <- read.csv("water_potability.csv", header = TRUE)
+
+head(water_potability)
+
+str(water_potability)
+#NOTE: Keep potability integer or factor?
+
+water_potability$Potability <- factor(water_potability$Potability,
+  levels = c(0, 1),
+  labels = c("Non-Potable", "Potable")
+)
+
+describe(water_potability)  
+# NOTE: Z-score these to better compare?  or unneccessary?
+
+vis_miss(water_potability)
+
+matrixplot(water_potability, 
+           main = "Water Potability Missing Data Matrix")
+
+
+na_percentage <- water_potability %>%
+  summarise(across(everything(), ~ mean(is.na(.)) * 100))
+print(na_percentage)
+# Most NA values are ph, sulfate, and Trihalomethanes
+
+
+```
+
+Potability is factored with 2 levels: "Non-Potable" and "Potable"
+
+4.4% of values are missing, mostly in Sulfates and ph levels with a smaller portion in Trihalomehanes.
+
+
+```{r correlation}
+
+
+water_potability_noNA = na.omit(water_potability)
+dim(water_potability_noNA)  # 2011 observations, 10 variables
+dim(water_potability)  # 3276 observations, 10 variables
+
+# omitting NA values reduced data set from 3276 observations to 2011 observations
+# NOTE: consider removing what observations are necessary
+
+vis_miss(water_potability_noNA)
+#confirmed no missing values remain, however we have lost over 1000 observations
+
+r <- water_potability_noNA %>% dplyr::select(where(is.numeric)) %>% cor()
+corrplot(r)
+
+# Solid set of variables with little to no collinearity
+
+summary_of_missing <- miss_var_summary(water_potability)
+print(summary_of_missing)
+
+naniar::vis_miss(water_potability)
+VIM::aggr(water_potability)
+
+par(mar = c(10, 6, 3, 3))
+aggr(water_potability, cex.axis = 0.6, numbers = TRUE, sortVars = TRUE)
+
+par(mar = c(30, 10, 2, 2))
+md.pattern(water_potability, rotate.names = TRUE)
+
+gg_miss_upset(water_potability) 
+
+
+# Create imputation for missing values using KNN
+water_potability_knn <- knnImputation(water_potability, k = 5)
+
+# Fit LDA with imputed data
+lda_model <- lda(Potability ~ ., data = water_potability_knn)
+print(lda_model)
+
+lda_coeffs <- as.data.frame(lda_model$scaling)
+lda_means <- as.data.frame(lda_model$means)
+
+kable(lda_coeffs, caption = "LDA Coefficients")
+kable(lda_means, caption = "LDA means")
+
+# Fit QDA with imputed data
+qda_model <- qda(Potability ~ ., data = water_potability_knn)
+print(qda_model)
+
+qda_coeffs <- as.data.frame(qda_model$scaling)
+kable(qda_coeffs, caption = "QDA Coefficients")
+
+
+#Examine density plots for imputed vs non-imputed data distribution comparisons.
+
+ggplot() + geom_density(data = water_potability, aes(x = ph), fill = "red", alpha = 0.5) + geom_density(data = water_potability_knn, aes(x = ph), fill = "blue", alpha = 0.5) + 
+  labs(title = "Distribution of pH values prior to (red) and after (blue) KNN imputation",
+       x = "pH",
+       y = "Density") +
+  theme_minimal()
+
+ggplot() + geom_density(data = water_potability, aes(x = Sulfate), fill = "red", alpha = 0.5) + geom_density(data = water_potability_knn, aes(x = Sulfate), fill = "blue", alpha = 0.5) + 
+  labs(title = "Distribution of Sulfate values prior to (red) and after (blue) KNN imputation",
+       x = "pH",
+       y = "Sulfate") +
+  theme_minimal()
+
+ggplot() + geom_density(data = water_potability, aes(x = Trihalomethanes), fill = "red", alpha = 0.5) + geom_density(data = water_potability_knn, aes(x = Trihalomethanes), fill = "blue", alpha = 0.5) + 
+  labs(title = "Distribution of Trihalomethanes values prior to (red) and after (blue) KNN imputation",
+       x = "pH",
+       y = "Trihalomethanes") +
+  theme_minimal()
+
+ggplot() + geom_density(data = water_potability, aes(x = Solids), fill = "red", alpha = 0.5) + geom_density(data = water_potability_knn, aes(x = Solids), fill = "blue", alpha = 0.5) + 
+  labs(title = "Distribution of Solids values prior to (red) and after (blue) KNN imputation",
+       x = "pH",
+       y = "Solids") +
+  theme_minimal()
+
+
+
+```
+
+No dark blue or red associations. 
+
+A correlation greater than .6 is considered a strong correlation, and greater than .8 a strong relationship. 
+
+Also, no NA values remain in the dataset, however we have lost over 1000 observations
+
+
+```{r models}
+
+head(water_potability)
+
+# Everything Model
+model1 = glm(Potability ~ ph + Hardness + Solids + Chloramines + Sulfate + Conductivity + Organic_carbon + Trihalomethanes + Turbidity, data = water_potability, family = binomial(link = "logit"), na.action = na.omit)
+summary(model1) # Nothing is significant
+
+# chemical Model
+model2 = glm(Potability ~ Chloramines + Sulfate + Trihalomethanes, data = water_potability, family = binomial(link = "logit"), na.action = na.omit)
+summary(model2) # Nothing is significant
+
+# Simplest Model
+model3 = glm(Potability ~ Organic_carbon, data = water_potability, family = binomial(link = "logit"), na.action = na.omit)
+summary(model3) # Nothing is significant, solids close, organic_carbon kinda, 
+
+
+```
+
+
+Graphs are important for two reasons. They allow us to assess non-linear relationships, and also categorical variables.
+
+```{r exploration}
+
+water_potability %>% dplyr::select(where(is.numeric)) %>% pairs()
+
+water_potability %>% 
+  select(Potability, names(water_potability)[2:9] ) %>% 
+  ggpairs()
+
+```
+
+
+
+```{r categoricalvariable}
+
+head(water_potability)
+
+#PLOTS for full dataset (no NA removal)
+
+plot1 <- ggplot(water_potability, aes(x = Potability, y = ph, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by ph",
+       x = "Potability",
+       y = "pH") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot2 <- ggplot(water_potability, aes(x = Potability, y = Hardness, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Hardness",
+       x = "Potability",
+       y = "Hardness") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot3 <- ggplot(water_potability, aes(x = Potability, y = Solids, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Solids",
+       x = "Potability",
+       y = "Solids") +
+  theme_minimal()  +
+  theme(legend.position = "none")
+
+plot4 <- ggplot(water_potability, aes(x = Potability, y = Chloramines, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Chloramines",
+       x = "Potability",
+       y = "Chloramines") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot5 <- ggplot(water_potability, aes(x = Potability, y = Sulfate, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Sulfate",
+       x = "Potability",
+       y = "Sulfate") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot6 <- ggplot(water_potability, aes(x = Potability, y = Conductivity, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Conductivity",
+       x = "Potability",
+       y = "Conductivity") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot7 <- ggplot(water_potability, aes(x = Potability, y = Organic_carbon, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Organic_carbon",
+       x = "Potability",
+       y = "Organic_carbon") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot8 <- ggplot(water_potability, aes(x = Potability, y = Trihalomethanes, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Trihalomethanes",
+       x = "Potability",
+       y = "Trihalomethanes") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot9 <- ggplot(water_potability, aes(x = Potability, y = Turbidity, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Turbidity",
+       x = "Potability",
+       y = "Turbidity") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+grid.arrange(
+  plot1, plot2, plot3,
+  plot4, plot5, plot6,
+  plot7, plot8, plot9,
+  ncol = 3
+)
+
+#PLOTS for dataset with NA removal
+
+plot1 <- ggplot(water_potability_noNA, aes(x = Potability, y = ph, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by ph",
+       x = "Potability",
+       y = "pH") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot2 <- ggplot(water_potability_noNA, aes(x = Potability, y = Hardness, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Hardness",
+       x = "Potability",
+       y = "Hardness") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot3 <- ggplot(water_potability_noNA, aes(x = Potability, y = Solids, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Solids",
+       x = "Potability",
+       y = "Solids") +
+  theme_minimal()  +
+  theme(legend.position = "none")
+
+plot4 <- ggplot(water_potability_noNA, aes(x = Potability, y = Chloramines, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Chloramines",
+       x = "Potability",
+       y = "Chloramines") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot5 <- ggplot(water_potability_noNA, aes(x = Potability, y = Sulfate, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Sulfate",
+       x = "Potability",
+       y = "Sulfate") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot6 <- ggplot(water_potability_noNA, aes(x = Potability, y = Conductivity, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Conductivity",
+       x = "Potability",
+       y = "Conductivity") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot7 <- ggplot(water_potability_noNA, aes(x = Potability, y = Organic_carbon, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Organic_carbon",
+       x = "Potability",
+       y = "Organic_carbon") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot8 <- ggplot(water_potability_noNA, aes(x = Potability, y = Trihalomethanes, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Trihalomethanes",
+       x = "Potability",
+       y = "Trihalomethanes") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot9 <- ggplot(water_potability_noNA, aes(x = Potability, y = Turbidity, fill = Potability)) +
+  geom_boxplot() +
+  labs(title = "Potability by Turbidity",
+       x = "Potability",
+       y = "Turbidity") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+grid.arrange(
+  plot1, plot2, plot3,
+  plot4, plot5, plot6,
+  plot7, plot8, plot9,
+  ncol = 3
+)
+
+ggplot(water_potability, aes(x = Solids, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Solids & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+
+
+
+# Compute variance proportions from singular values
+lda_variance <- data.frame(
+  LD = paste0("LD", 1:length(lda_model$svd)),
+  Proportion_of_Variance = lda_model$svd^2 / sum(lda_model$svd^2)
+)
+
+# Display as a table
+kable(lda_variance, caption = "Proportion of Variance Explained by Each Linear Discriminant")
+
+
+```
+
+
+
+
