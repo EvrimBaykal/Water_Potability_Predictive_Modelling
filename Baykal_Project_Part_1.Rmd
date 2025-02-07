@@ -1,6 +1,6 @@
 ---
 title: "Project Part 1"
-author: "Evrim & Antonia"
+author: "EB VERSION"
 date: "`r Sys.Date()`"
 output: word_document
 ---
