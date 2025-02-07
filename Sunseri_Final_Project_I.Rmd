@@ -1,6 +1,6 @@
 ---
 title: "Final Project: Water Potability"
-Author: "Antonia Sunseri and Evrim Baykal"
+Author: "AS VERSION"
 output: html_document
 date: "2025-01-22"
 ---
