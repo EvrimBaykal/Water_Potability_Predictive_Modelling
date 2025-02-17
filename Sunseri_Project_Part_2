@@ -1,0 +1,471 @@
+---
+title: "Final Project: Water Potability"
+Author: "Antonia Sunseri and Evrim Baykal"
+output: html_document
+date: "2025-01-22"
+---
+
+Data set: https://www.kaggle.com/datasets/adityakadiwal/water-potability.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(MASS) # For LDA and QDA analysis
+library(Sleuth3)
+library(car)
+library(corrplot)
+library(dplyr)
+library(GGally)
+library(ggplot2)
+library(tidyverse)
+library(caret) # For train-test split and model evaluation
+library(pROC)  # For ROC curve analysis
+library(leaps)
+library(stats)
+library(gridExtra)
+library(psych)
+library(naniar)
+library(VIM)
+library(mice)
+library(DMwR2)
+library(factoextra)
+library(knitr)
+```
+
+
+```{r Loading Data}
+water_data <- read.csv("water_potability.csv")
+summary(water_data) #pH has 491 missing values, sulfate has 781, and Trihalomethanes had 162. 
+```
+```{r Data Cleaning}
+water_data$Potability <- factor(water_data$Potability,
+  levels = c(0, 1),
+  labels = c("Non-Potable", "Potable"))
+
+str(water_data)
+
+vis_miss(water_data)
+
+matrixplot(water_data, 
+           main = "Water Potability Missing Data Matrix")
+
+
+na_percentage <- water_data %>%
+  summarise(across(everything(), ~ mean(is.na(.)) * 100))
+print(na_percentage)
+
+water_data_noNA <- na.omit(water_data) #2011 observations, prior 3276
+
+vis_miss(water_data_noNA)  #All values are present 
+```
+There are ~15% missing values for ph, 23.84% of Sulfate had missing values, and 4.95% of Trihalomethanes had missing values. It is confirmed that no missing values remain in the data set through vis_miss(). 
+
+##Visualizations
+
+```{r}
+plot(water_data_noNA$Chloramines,water_data_noNA$Potability)
+plot(water_data_noNA$Sulfate,water_data_noNA$Potability)
+plot(water_data_noNA$Conductivity,water_data_noNA$Potability)
+plot(water_data_noNA$Organic_carbon,water_data_noNA$Potability)
+plot(water_data_noNA$Trihalomethanes,water_data_noNA$Potability)
+plot(water_data_noNA$Turbidity,water_data_noNA$Potability)
+plot(water_data_noNA$ph,water_data_noNA$Potability)
+
+
+ggplot(water_data_noNA, aes(x = Solids, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Solids & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_noNA, aes(x = Trihalomethanes, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Trihalomethanes & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_noNA, aes(x = Organic_carbon, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Organic Carbon & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_noNA, aes(x = Sulfate, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Sulfate & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_noNA, aes(x = ph, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of ph & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_noNA, aes(x = Conductivity, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Conductivity & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_noNA, aes(x = Turbidity, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Turbidity & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+```
+
+```{r Corr Plot}
+r <- water_data %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  cor()
+
+#Create the correlation heatmap using corrplot
+corrplot(r)
+
+r[,5]
+
+abs(r[,5]) >.59 
+
+cor(select(water_data_noNA, c(Sulfate, Solids, Hardness, ph, Chloramines, Conductivity, Organic_carbon, Turbidity, Trihalomethanes) ) )
+```
+##Modeling 
+```{r}
+model1 = glm(Potability ~ ph + Hardness + Solids + Chloramines + Sulfate + Conductivity + Organic_carbon + Trihalomethanes + Turbidity, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model1)
+```
+Solids is significant at the 10% level. Therefore, we reject the null hypothesis at the 10% level. Solids do affect Potability. However, it is important to note his is a weak evidence compared to rejecting the null hypothesis at the 5% level. 
+```{r}
+model2 = glm(Potability ~ ph + Solids + Chloramines + Sulfate + Conductivity + Organic_carbon + Trihalomethanes + Turbidity, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model2)
+```
+```{r}
+model3 = glm(Potability ~ ph + Solids + Chloramines + Conductivity + Organic_carbon + Trihalomethanes + Turbidity, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model3)
+```
+```{r}
+model4 = glm(Potability ~ Solids + Chloramines + Conductivity + Organic_carbon + Trihalomethanes + Turbidity, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model4)
+```
+
+```{r}
+model5 = glm(Potability ~ Solids + Chloramines + Conductivity + Organic_carbon + Turbidity, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model5)
+```
+```{r}
+model5 = glm(Potability ~ Solids + Chloramines + Conductivity + Organic_carbon + Trihalomethanes, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model5)
+```
+```{r}
+model6 = glm(Potability ~ Solids + Chloramines  + Organic_carbon + Trihalomethanes, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model6)
+```
+```{r}
+model7 = glm(Potability ~ Solids + Chloramines  + Organic_carbon, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model7)
+```
+```{r}
+model8 = glm(Potability ~ Solids + Organic_carbon, data = water_data_noNA, family = binomial(link = "logit"))
+summary(model8)
+#Organic carbon is significant at the 10% level
+```
+
+```{r Final Model}
+final.model = glm(Potability ~ Solids, data = water_data_noNA, family = binomial(link = "logit"))
+summary(final.model)
+
+shapiro.test(water_data$Solids)
+```
+The p-value = 0.0536, which means that Solids is not significant at the 5% level (p < 0.05) but is significant at the 10% level (p < 0.10). 
+For he Shapiro-Wilk test, we got a p-value of <2.2e-16 which indicates that Solids are not normally distributed.
+```{r Transformation}
+water_data_noNA$Solids_log <- log(water_data_noNA$Solids + 1)
+shapiro.test(water_data_noNA$Solids_log)
+```
+Since the p-value is still < 2.2e-16 after the trasnformation, we reject the null hypothesis that the data is normally distributed. 
+```{r}
+Potability.null <- as.formula("Potability ~ 1")
+Potability.null
+```
+
+```{r}
+backward.model <-step(model1, scope = Potability.null, direction = "backward", trace = 1)
+```
+```{r}
+summary(backward.model)
+```
+
+```{r KNN Imputation}
+#Creating imputation for missing values 
+water_data_knn <- knnImputation(water_data, k = 5)
+
+(qq_plots <- ggplot(water_data_knn, aes(sample = Solids)) + #qq plot for entire dataset
+  geom_qq() + 
+  geom_qq_line())
+
+shapiro.test(water_data_knn$Solids) #Data is not normal with a p-value < 2.2e-16
+```
+
+```{r Visualizations}
+plot(water_data_knn$Chloramines,water_data_knn$Potability)
+plot(water_data_knn$Sulfate,water_data_knn$Potability)
+plot(water_data_knn$Conductivity,water_data_knn$Potability)
+plot(water_data_knn$Organic_carbon,water_data_knn$Potability)
+plot(water_data_knn$Trihalomethanes,water_data_knn$Potability)
+plot(water_data_knn$Turbidity,water_data_knn$Potability)
+plot(water_data_knn$ph,water_data_knn$Potability)
+
+
+ggplot(water_data_knn, aes(x = Solids, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Solids & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_knn, aes(x = Trihalomethanes, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Trihalomethanes & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_knn, aes(x = Organic_carbon, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Organic Carbon & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_knn, aes(x = Sulfate, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Sulfate & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_knn, aes(x = ph, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of ph & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_knn, aes(x = Conductivity, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Conductivity & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+
+ggplot(water_data_knn, aes(x = Turbidity, color = Potability)) +
+  geom_density() +
+  labs(title = "Density Plot of Turbidity & Potability",
+       x = "Solids",
+       y = "Density") +
+  theme_minimal()
+```
+
+```{r}
+model.a = glm(Potability ~ ph + Hardness + Solids + Chloramines + Sulfate + Conductivity + Organic_carbon + Trihalomethanes + Turbidity, data = water_data_knn, family = binomial(link = "logit"))
+summary(model.a)
+
+backward.model.a <-step(model.a, scope = Potability.null, direction = "backward", trace = 1)
+summary(backward.model.a)
+```
+
+```{r}
+final.model.a = glm(Potability ~ Solids*Chloramines, data = water_data_knn, family = binomial(link = "logit"))
+summary(final.model.a) 
+
+(model_predictions <- predict(final.model.a, type = "response"))
+plot(final.model.a) #Funnel shape present with interaction between Solids and Chloramines
+
+final.model.b = glm(Potability ~ Solids, data = water_data_knn, family = binomial(link = "logit"))
+summary(final.model.b) 
+
+plot(final.model.b)
+```
+
+
+```{r}
+#SPLIT DATA INTO TRAINING AND TESTING SET
+str(water_data)
+
+set.seed(1)
+(sample <- sample(c(TRUE, FALSE), nrow(water_data_knn), replace=TRUE, prob=c(0.7,0.3)))
+train <- water_data[sample, ]
+test <- water_data[!sample, ] 
+
+#FIT LDA MODEL
+lda_model <- lda(Potability ~ ., data = train)
+lda_model
+
+lda_predictions <- predict(lda_model, test)
+
+lda_predicted_classes <- lda_predictions$class
+
+
+qda_model <- qda(Potability ~ ., data = train)
+qda_model
+
+qda_predictions <- predict(qda_model, test)
+qda_predicted_classes <- qda_predictions$class
+
+
+# Load caret package for confusionMatrix
+library(caret)
+
+# Confusion matrix for LDA predictions
+lda_cm <- confusionMatrix(lda_predicted_classes, test$Potability)
+print(lda_cm)
+
+# Confusion matrix for QDA predictions
+qda_cm <- confusionMatrix(qda_predicted_classes, test$Potability)
+print(qda_cm)
+```
+
+For LDA Analysis, the model correctly classified 57% of the samples. The Kappa value is very low indicating a low agreement between predicted and actual values. The sensitivity is 0.9971, so almost all non-potable samples were identified correctly. The specificity is 0.0039 which means almost all the potable samples were misclassified. Among all predicted non-potable samples, only 57% were truly non-potable. The balances accuracy is 0.5 indicating poor model performance. Thus, with the extremely low specificity, the model almost never predicts potable correctly and is biased towards non-potable. 
+
+For QDA Analysis, the accuracy was 67%. The kappa value is 0.287 which shows imporvment in agreement between predicted and actual values but still weak. The sensitivity is 0.8889 meaning the model correctly detects 88.9% of non-potable samples. The specificity is 0.3813, so the model detects 38% of potable samples. Of the samples predicted as non-potable, 65.7% were correct. Among all the predicted potable samples, 72% were correct. The model does need some improvments but is better than LDA analysis. 
+
+
+```{r}
+
+roc_curve <- roc(water_data_knn$Potability, model_predictions)
+plot(roc_curve)
+
+
+```
+
+```{r}
+auc_value <- auc(roc_curve)
+print(auc_value) #model struggles to classify 
+```
+### PCA Analysis
+```{r}
+# Removing the categorical target variable (Potability -> Potable vs. non-potable)
+water_pca_data <- water_data_knn[, !(names(water_data_knn) %in% "Potability")]
+
+# Standardizing the data
+water_pca_data_scaled <- scale(water_pca_data)
+
+```
+Scaling normalizes the data so that all numerical features have mean = 0 and standard deviation = 1. PCA is sensitive to normality.
+
+```{r}
+pca_result <- prcomp(water_pca_data_scaled, center = TRUE, scale. = TRUE) #Principal component analysis function
+
+# Summary of PCA results
+summary(pca_result)
+
+# Eigenvalues
+fviz_eig(pca_result) 
+
+```
+The principal components are the new transformed variables. By plotting the eigenvalues this helps to determine the optimal number of components using the elbow method. This is the point where adding more PCs does not significantly improve variance explained.
+
+PC1 has the highest standard deviation which indicates it captures the most variance. PC9 has the lowest standard deviation, so it explains less variance. PC1-PC4 capture about 50% of the total variance. PC1-PC7 capture about 80% of the total variance. 
+The scree plot shows an elbow at dimension 3 so the first three principal components capture the most variance. Next step will be to reduce the data set from 9 dimensions to 3 (keeping the most useful information). 
+
+PC1 is 13.69%, PC2 is 12.91%, and PC3 is 11.77%, so about 38% of the dataset's total information is retained with just ph, hardness, and solids. 
+```{r}
+# Biplot to visualize PCA
+fviz_pca_biplot(pca_result, label = "var", habillage = water_data_knn$Potability, addEllipses = TRUE)
+
+```
+
+```{r}
+# Get the transformed data (PCA scores)
+water_pca_transformed <- as.data.frame(pca_result$x)
+
+# Add the target variable (Potability)
+water_pca_transformed$Potability <- water_data_knn$Potability
+```
+
+```{r}
+model_pca <- glm(Potability ~ PC1 + PC2 + PC3, data = water_pca_transformed, family = binomial(link = "logit"))
+summary(model_pca)
+
+# Get predicted probabilities
+(predicted_probabilities <- predict(model_pca, type = "response"))
+
+
+# Convert probabilities to binary class (0.5 threshold)
+(predicted_classes <- ifelse(predicted_probabilities > 0.5, 1, 0))
+table(predicted_classes)
+# Compute Accuracy
+accuracy <- mean(predicted_classes == water_pca_transformed$Potability)
+print(paste("Accuracy:", round(accuracy, 4)))
+
+```
+The model has a highlly significant intercept with a p-value of < 2.2e-16. This means that when all PCs are zero, the log-odds of Potability being 1 is negative. PC1 has a p-value of 0.0645 is just above the common significance level of 0.05. This suggests a slight positive association with Potability. PC2 has a p-value of 0.2045 which is not statistically significant. Lastly, PC3 has a p-value of 0.139 which is not statistically significant. The overall model fit is weak. 
+```{r}
+# Split into train and test
+set.seed(1)
+sample <- sample(c(TRUE, FALSE), nrow(water_pca_transformed), replace=TRUE, prob=c(0.7,0.3))
+train_pca <- water_pca_transformed[sample, ]
+test_pca <- water_pca_transformed[!sample, ]
+
+# Fit LDA Model
+lda_pca_model <- lda(Potability ~ PC1 + PC2 + PC3, data = train_pca)
+lda_pca_predictions <- predict(lda_pca_model, test_pca)$class
+
+# Fit QDA Model
+qda_pca_model <- qda(Potability ~ PC1 + PC2 + PC3, data = train_pca)
+qda_pca_predictions <- predict(qda_pca_model, test_pca)$class
+
+# Evaluate Models
+lda_pca_cm <- confusionMatrix(lda_pca_predictions, test_pca$Potability)
+qda_pca_cm <- confusionMatrix(qda_pca_predictions, test_pca$Potability)
+
+print(lda_pca_cm)
+print(qda_pca_cm)
+
+```
+
+
+```{r}
+prop.table(table(water_pca_transformed$Potability)) #Appears to be biased towards non-potable
+
+```
+```{r}
+library(ROSE)
+balanced_data <- ovun.sample(Potability ~ ., data = water_pca_transformed, 
+                             method = "under", N = min(table(water_pca_transformed$Potability)) * 2)$data
+
+```
+
+
+```{r}
+model_balanced <- glm(Potability ~ PC1 + PC2 + PC3, 
+                      data = balanced_data, 
+                      family = binomial(link = "logit"))
+summary(model_balanced)
+
+```
+```{r}
+model_balanced2 <- glm(Potability ~ PC1 + PC2, 
+                      data = balanced_data, 
+                      family = binomial(link = "logit"))
+summary(model_balanced2)
+```
+```{r}
+model_balanced3 <- glm(Potability ~ PC1, 
+                      data = balanced_data, 
+                      family = binomial(link = "logit"))
+summary(model_balanced3)
+```
+```{r}
+library(pROC)
+roc_curve <- roc(balanced_data$Potability, predictions)
+plot(roc_curve, main = "ROC Curve")
+auc(roc_curve)  # This will give you the AUC value
+
+```
